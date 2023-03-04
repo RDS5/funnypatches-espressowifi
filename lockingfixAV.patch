@@ -1,0 +1,60 @@
+diff --git a/media/libstagefright/ACodec.cpp b/media/libstagefright/ACodec.cpp
+index def8ada3c..52d69429e 100644
+--- a/media/libstagefright/ACodec.cpp
++++ b/media/libstagefright/ACodec.cpp
+@@ -1182,6 +1182,12 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
+     // 2. try to allocate two (2) additional buffers to reduce starvation from
+     //    the consumer
+     //    plus an extra buffer to account for incorrect minUndequeuedBufs
++#ifdef BOARD_CANT_REALLOCATE_OMX_BUFFERS
++    // Some devices don't like to set OMX_IndexParamPortDefinition at this
++    // point (even with an unmodified def), so skip it if possible.
++    // This check was present in KitKat.
++    if (def.nBufferCountActual < def.nBufferCountMin + *minUndequeuedBuffers) {
++#endif
+     for (OMX_U32 extraBuffers = 2 + 1; /* condition inside loop */; extraBuffers--) {
+         OMX_U32 newBufferCount =
+             def.nBufferCountMin + *minUndequeuedBuffers + extraBuffers;
+@@ -1201,6 +1207,9 @@ status_t ACodec::configureOutputBuffersFromNativeWindow(
+             return err;
+         }
+     }
++#ifdef BOARD_CANT_REALLOCATE_OMX_BUFFERS
++    }
++#endif
+ 
+     err = native_window_set_buffer_count(
+             mNativeWindow.get(), def.nBufferCountActual);
+diff --git a/media/libstagefright/Android.bp b/media/libstagefright/Android.bp
+index c8d4e4aaa..d4e6e879f 100644
+--- a/media/libstagefright/Android.bp
++++ b/media/libstagefright/Android.bp
+@@ -139,6 +139,7 @@ cc_library_shared {
+         "-Werror",
+         "-Wno-error=deprecated-declarations",
+         "-Wall",
++       "-DBOARD_CANT_REALLOCATE_OMX_BUFFERS",
+     ],
+ 
+     product_variables: {
+diff --git a/media/libstagefright/omx/OMXUtils.cpp b/media/libstagefright/omx/OMXUtils.cpp
+index 589483710..884fc4fa0 100644
+--- a/media/libstagefright/omx/OMXUtils.cpp
++++ b/media/libstagefright/omx/OMXUtils.cpp
+@@ -213,6 +213,7 @@ bool DescribeDefaultColorFormat(DescribeColorFormat2Params &params) {
+         fmt != OMX_COLOR_FormatYUV420PackedPlanar &&
+         fmt != OMX_COLOR_FormatYUV420SemiPlanar &&
+         fmt != OMX_COLOR_FormatYUV420PackedSemiPlanar &&
++       fmt != OMX_TI_COLOR_FormatYUV420PackedSemiPlanar &&
+         fmt != (OMX_COLOR_FORMATTYPE)HAL_PIXEL_FORMAT_YV12) {
+         ALOGW("do not know color format 0x%x = %d", fmt, fmt);
+         return false;
+@@ -289,6 +290,7 @@ bool DescribeDefaultColorFormat(DescribeColorFormat2Params &params) {
+         case OMX_COLOR_FormatYUV420SemiPlanar:
+             // FIXME: NV21 for sw-encoder, NV12 for decoder and hw-encoder
+         case OMX_COLOR_FormatYUV420PackedSemiPlanar:
++       case OMX_TI_COLOR_FormatYUV420PackedSemiPlanar:
+             // NV12
+             image.mPlane[image.U].mOffset = params.nStride * params.nSliceHeight;
+             image.mPlane[image.U].mColInc = 2;
+
